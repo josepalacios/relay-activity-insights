@@ -14,6 +14,9 @@
 | 02 | Implementation Planning | Completed | [Implementation Planning](ai-log/02-implementation-planning.md) |
 | 03 | Agent Configuration | Completed | [Agent Configuration](ai-log/03-agent-configuration.md) |
 | 04 | Project Scaffolding | Completed | [Project Scaffolding](ai-log/04-project-scaffolding.md) |
+| 05 | Database Persistence | Completed | [Database Persistence](ai-log/05-database-persistence.md) |
+| 05 | Weekly Aggregation | Completed | [Weekly Aggregation](ai-log/06-weekly-aggregation.md) |
+
 
 ## Key Engineering Decisions
 

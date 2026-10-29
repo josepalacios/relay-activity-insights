@@ -37,6 +37,20 @@ The container copies `seed.sql` beside the published API. The local initializer 
 
 `GET http://localhost:8080/api/accounts` returns the seeded account list with `id`, `name`, and `timeZone`. The health check is at <http://localhost:8080/health>; Vite is at <http://localhost:5173>.
 
+## Weekly activity summary
+
+Request a complete, account-local Monday–Sunday week (the date is the Monday):
+
+```sh
+curl "http://localhost:8080/api/accounts/1/activity-summary?weekStart=2026-07-20"
+```
+
+The optional `weekStart` defaults to the latest complete week before the fixed demo reference date `2026-07-28`. Dates must be ISO `yyyy-MM-dd`, Mondays, no later than that latest complete week, and inside the full-week range supported by the observed seed timestamps. The endpoint returns 400 for invalid or unsupported weeks and 404 for an unknown account. It computes local week boundaries with the account IANA timezone, converts both to UTC, and queries a half-open interval. Counts include event types `call_received`, `lead_created`, and `appointment_set`; historical locations are retained with zero counts in the selected week.
+
+The response includes `summary`, four `baselineWeeks` with nullable counts when outside observed dataset extent, `coverage`, and per-location totals and baseline totals. `baselineAverage` is the arithmetic mean only when all four preceding weeks are within observed dataset extent; `percentageChange` is null when coverage is incomplete or the average is zero. For the supplied seed, Summit Auto Group (`accountId=1`) on `2026-07-20` has selected total 53 and baseline totals `[50, 43, 62, 39]` (average 48.5). Quiet Harbor Spa (`accountId=20`) returns zero observed events and no locations for that covered week.
+
+Coverage is inferred from the global minimum and maximum event timestamps in the database because the schema contains no ingestion or account-specific coverage metadata. This indicates whether the week lies within the supplied dataset's observed time span; it does not prove that any source was operational or delivered all events. No empty period is described as real-world zero activity beyond that observed extent.
+
 ## Verify
 
 The API test uses an already initialized PostgreSQL test database. Set `RELAY_TEST_CONNECTION` to that database connection string to enable it; otherwise xUnit reports it as skipped. It checks the real endpoint and the 20-row result. To verify both seed totals directly inside Compose:
@@ -68,4 +82,4 @@ No database or volume is deleted by the application initializer.
 
 ## Milestone scope
 
-This milestone adds persistence, schema migration, local initialization, and account retrieval. Weekly aggregation, reporting endpoints, dashboard metrics, authentication/authorization, and production deployment remain outside this milestone.
+This milestone provides PostgreSQL persistence, local initialization, account retrieval, and weekly account/location activity aggregation. The account ID is demo context only, not an authorization boundary. A frontend dashboard, authentication/authorization, forecasting, anomaly detection, and production deployment are outside this milestone.

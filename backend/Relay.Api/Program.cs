@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Relay.Api;
 using Relay.Api.Data;
 using Npgsql;
 
@@ -17,6 +18,102 @@ app.MapGet("/api/accounts", async (AppDbContext db, CancellationToken cancellati
         .OrderBy(account => account.Id)
         .Select(account => new { account.Id, account.Name, timeZone = account.Timezone })
         .ToListAsync(cancellationToken));
+
+app.MapGet("/api/accounts/{accountId}/activity-summary", async (
+    string accountId, string? weekStart, AppDbContext db, CancellationToken cancellationToken) =>
+{
+    if (!int.TryParse(accountId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsedAccountId) || parsedAccountId <= 0)
+        return Results.Problem("accountId must be a positive integer.", statusCode: StatusCodes.Status400BadRequest);
+
+    var account = await db.Accounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == parsedAccountId, cancellationToken);
+    if (account is null) return Results.NotFound(new { error = "Account not found." });
+
+    DateOnly requestedWeek;
+    if (weekStart is null)
+    {
+        var reference = new DateOnly(2026, 7, 28);
+        requestedWeek = WeeklyActivitySummary.MondayOf(reference).AddDays(-7);
+    }
+    else if (!DateOnly.TryParseExact(weekStart, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                 System.Globalization.DateTimeStyles.None, out requestedWeek))
+        return Results.Problem("weekStart must be an ISO date in yyyy-MM-dd format.", statusCode: StatusCodes.Status400BadRequest);
+
+    if (requestedWeek.DayOfWeek != DayOfWeek.Monday)
+        return Results.Problem("weekStart must be a Monday.", statusCode: StatusCodes.Status400BadRequest);
+
+    TimeZoneInfo zone;
+    try { zone = TimeZoneInfo.FindSystemTimeZoneById(account.Timezone); }
+    catch (TimeZoneNotFoundException) { return Results.Problem("The account timezone is invalid.", statusCode: StatusCodes.Status500InternalServerError); }
+    catch (InvalidTimeZoneException) { return Results.Problem("The account timezone is invalid.", statusCode: StatusCodes.Status500InternalServerError); }
+
+    var latestCompleteWeek = WeeklyActivitySummary.MondayOf(new DateOnly(2026, 7, 28)).AddDays(-7);
+    if (requestedWeek > latestCompleteWeek)
+        return Results.Problem("weekStart must be a complete week within the supported reporting period.", statusCode: StatusCodes.Status400BadRequest);
+
+    var baselineStarts = Enumerable.Range(1, 4).Select(offset => requestedWeek.AddDays(-7 * offset)).ToArray();
+    var allStarts = baselineStarts.Append(requestedWeek).ToArray();
+    var fromUtc = WeeklyActivitySummary.ToUtc(allStarts.Min(), zone);
+    var toUtc = WeeklyActivitySummary.ToUtc(requestedWeek.AddDays(7), zone);
+
+    var extent = await db.ActivityEvents.AsNoTracking()
+        .GroupBy(_ => 1)
+        .Select(g => new { Min = g.Min(e => e.OccurredAt), Max = g.Max(e => e.OccurredAt) })
+        .SingleOrDefaultAsync(cancellationToken);
+    if (extent is null)
+        return Results.Problem("No event data is available to establish source coverage.", statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    var rows = await db.ActivityEvents.AsNoTracking()
+        .Where(e => e.AccountId == parsedAccountId && e.OccurredAt >= fromUtc && e.OccurredAt < toUtc)
+        .Select(e => new { e.Location, e.EventType, e.OccurredAt })
+        .ToListAsync(cancellationToken);
+    var locations = await db.ActivityEvents.AsNoTracking().Where(e => e.AccountId == parsedAccountId)
+        .Select(e => e.Location).Distinct().OrderBy(x => x).ToListAsync(cancellationToken);
+
+    bool IsCovered(DateOnly start) => WeeklyActivitySummary.ToUtc(start, zone) >= extent.Min &&
+        WeeklyActivitySummary.ToUtc(start.AddDays(7), zone) <= extent.Max;
+    var supported = IsCovered(requestedWeek);
+    if (!supported)
+        return Results.Problem("weekStart is outside the observed dataset coverage.", statusCode: StatusCodes.Status400BadRequest);
+
+    WeeklyActivitySummary.Counts Count(DateOnly start, string? location = null)
+    {
+        var startUtc = WeeklyActivitySummary.ToUtc(start, zone);
+        var endUtc = WeeklyActivitySummary.ToUtc(start.AddDays(7), zone);
+        return WeeklyActivitySummary.Count(rows.Where(x => x.OccurredAt >= startUtc && x.OccurredAt < endUtc &&
+            (location is null || x.Location == location)).Select(x => x.EventType));
+    }
+
+    var baseline = baselineStarts.Select(start => new
+    {
+        start = start.ToString("yyyy-MM-dd"), end = start.AddDays(6).ToString("yyyy-MM-dd"),
+        total = IsCovered(start) ? (int?)Count(start).Total : null,
+        byEventType = IsCovered(start) ? Count(start).ByEventType : null
+    }).ToArray();
+    var summaryCounts = Count(requestedWeek);
+    var coveredBaseline = baseline.Where(x => x.total.HasValue).Select(x => x.total!.Value).ToArray();
+    var baselineAverage = coveredBaseline.Length == 4 ? coveredBaseline.Average() : (double?)null;
+    double? percentageChange = baselineAverage is > 0 ? (summaryCounts.Total - baselineAverage.Value) / baselineAverage.Value * 100 : null;
+
+    var locationSummaries = locations.Select(location =>
+    {
+        var current = Count(requestedWeek, location);
+        return new
+        {
+            name = location, total = current.Total, byEventType = current.ByEventType,
+            baseline = new { weeklyTotals = baselineStarts.Select(start => IsCovered(start) ? (int?)Count(start, location).Total : null).ToArray() }
+        };
+    }).ToArray();
+
+    return Results.Ok(new
+    {
+        account = new { account.Id, account.Name, timeZone = account.Timezone },
+        reportingWeek = new { start = requestedWeek.ToString("yyyy-MM-dd"), end = requestedWeek.AddDays(6).ToString("yyyy-MM-dd") },
+        baselineWeeks = baseline,
+        coverage = new { status = coveredBaseline.Length == 4 ? "complete" : "insufficient", baselineWeeksRequired = 4, baselineWeeksAvailable = coveredBaseline.Length },
+        summary = new { total = summaryCounts.Total, baselineAverage, percentageChange, byEventType = summaryCounts.ByEventType },
+        locations = locationSummaries
+    });
+});
 
 if (args.Contains("--initialize-database", StringComparer.Ordinal))
 {
