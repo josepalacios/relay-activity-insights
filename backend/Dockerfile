@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+COPY seed.sql ./seed.sql
 COPY backend/Relay.Api/Relay.Api.csproj backend/Relay.Api/
 RUN dotnet restore backend/Relay.Api/Relay.Api.csproj
 COPY backend/Relay.Api/ backend/Relay.Api/

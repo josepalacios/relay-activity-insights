@@ -6,26 +6,46 @@ Minimal local scaffolding for the DASH-247 activity insights milestone.
 
 - .NET 10 SDK
 - Node.js 22+ and npm
-- Docker Compose
+- Docker Compose with its engine running
 
-## Run locally
+## Initialize the local database
 
-Start the API and PostgreSQL with Compose:
+The migration is the source of the PostgreSQL schema. `schema.sql` and `seed.sql` remain reference inputs and are not edited. The initializer runs `Database.Migrate()`, switches its PostgreSQL session to UTC, then loads the repository's unchanged `seed.sql` in one transaction only when both tables are empty. It recognizes the complete expected seed (20 accounts and 12,626 events) on later runs. A partial or unexpected database is left untouched and causes initialization to stop for manual inspection.
+
+Start PostgreSQL, run initialization, then start the app:
 
 ```sh
-docker compose up --build
+docker compose up -d postgres
+docker compose run --rm api --initialize-database
+docker compose up --build -d api frontend
 ```
 
-The API health check is available at <http://localhost:8080/health>. The React/Vite placeholder is at <http://localhost:5173>.
-
-To run projects directly, start PostgreSQL with the credentials in `backend/Relay.Api/appsettings.json`, then run:
+For a directly run API, start PostgreSQL with the connection string in `backend/Relay.Api/appsettings.json`, then run from the repository root:
 
 ```sh
+dotnet run --project backend/Relay.Api -- --initialize-database
 dotnet run --project backend/Relay.Api
-cd frontend && npm install && npm run dev
 ```
 
-Run backend checks with:
+The initializer applies migrations before seeding. To apply schema migrations without invoking seed loading:
+
+```sh
+dotnet ef database update --project backend/Relay.Api/Relay.Api.csproj
+```
+
+The container copies `seed.sql` beside the published API. The local initializer also finds the root `seed.sql`. Timestamp literals in that file have no explicit offset; the initializer sets the PostgreSQL session timezone to UTC before executing them, preserving the file's stated UTC meaning when inserted into `timestamptz` columns. Application `DateTime` values written to these columns must use `DateTimeKind.Utc` (Npgsql rejects local/unspecified `DateTime` for `timestamptz`).
+
+`GET http://localhost:8080/api/accounts` returns the seeded account list with `id`, `name`, and `timeZone`. The health check is at <http://localhost:8080/health>; Vite is at <http://localhost:5173>.
+
+## Verify
+
+The API test uses an already initialized PostgreSQL test database. Set `RELAY_TEST_CONNECTION` to that database connection string to enable it; otherwise xUnit reports it as skipped. It checks the real endpoint and the 20-row result. To verify both seed totals directly inside Compose:
+
+```sh
+docker compose exec postgres psql -U relay -d relay -c "SELECT (SELECT COUNT(*) FROM accounts) AS accounts, (SELECT COUNT(*) FROM activity_events) AS activity_events;"
+```
+
+Expected: `20` accounts and `12626` activity events, including Quiet Harbor Spa (which has no events). Backend checks:
 
 ```sh
 dotnet restore tests/Relay.Api.Tests/Relay.Api.Tests.csproj
@@ -33,8 +53,19 @@ dotnet build tests/Relay.Api.Tests/Relay.Api.Tests.csproj
 dotnet test tests/Relay.Api.Tests/Relay.Api.Tests.csproj
 ```
 
-Compose uses a named PostgreSQL volume. Remove it with `docker compose down -v` to reset the local database. No schema or seed scripts are automatically applied.
+## Reset local data
 
-## Not implemented yet
+Initialization is repeatable; rerun `docker compose run --rm api --initialize-database` to verify an already seeded database. For a genuinely fresh local database, the following command permanently deletes this Compose project's named PostgreSQL volume and all data in it. Confirm that the volume contains only disposable local data and preserve anything needed before running it:
 
-This scaffold does not include database entities, migrations, schema or seed loading, reporting endpoints, account selection, dashboard metrics, authentication/authorization, or production deployment configuration. The connection string uses demo local credentials and must be replaced for any shared or deployed environment.
+```sh
+docker compose down -v
+docker compose up -d postgres
+docker compose run --rm api --initialize-database
+docker compose up --build -d api frontend
+```
+
+No database or volume is deleted by the application initializer.
+
+## Milestone scope
+
+This milestone adds persistence, schema migration, local initialization, and account retrieval. Weekly aggregation, reporting endpoints, dashboard metrics, authentication/authorization, and production deployment remain outside this milestone.
