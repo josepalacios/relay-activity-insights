@@ -104,8 +104,42 @@ The Vite dev server proxies `/api` requests to `http://localhost:8080`. The fron
 cd frontend
 npm run build
 ```
+### Frontend automated tests
 
-The frontend scaffold does not currently include a test runner or component-testing dependencies, so focused automated UI tests are not available without adding a test stack. Verify the frontend with the build above and the dashboard smoke path: open the default Summit Auto Group report, confirm total `53` and baseline totals `50, 43, 62, 39`, change account/week, refresh to confirm URL restoration, and inspect empty account and API error states. Backend endpoint checks remain described in the Verify section above.
+The frontend includes automated tests using Vitest, React Testing Library, and jsdom.
+
+Run the tests from the repository root:
+
+```sh
+cd frontend
+npm ci
+npm test
+```
+
+The six automated tests cover:
+
+- Restoring account and reporting-week filters from URL parameters.
+- Updating URL parameters when filters change.
+- Rendering weekly totals and four-week historical data.
+- Handling accounts with no observed activity.
+- Suppressing misleading comparisons when baseline coverage is insufficient.
+- Displaying API errors with a retry action.
+
+These tests mock the API boundary and complement the PostgreSQL-backed backend tests.
+
+### Manual dashboard verification
+
+After starting the application with Docker Compose:
+
+1. Open http://localhost:5173.
+2. Select Summit Auto Group and the week starting 2026-07-20.
+3. Confirm the total is 53 and the four baseline totals are 50, 43, 62, and 39.
+4. Change the account and reporting week.
+5. Refresh the browser and verify the URL filters are preserved.
+6. Select Quiet Harbor Spa and verify the empty-account state.
+7. Verify that API errors display an appropriate error message.
+
+Backend test commands are documented in the Verify section above.
 
 ## Milestone scope
 
