@@ -80,6 +80,33 @@ docker compose up --build -d api frontend
 
 No database or volume is deleted by the application initializer.
 
+## Frontend dashboard
+
+Start the local stack after initializing the database as described above:
+
+```sh
+docker compose up --build -d api frontend
+```
+
+Open <http://localhost:5173>. The dashboard loads accounts from `/api/accounts`, then requests the selected account's activity summary. It defaults to the fixed demo reporting week of July 20–26, 2026. Account and week filters are stored in the URL as `?account=1&week=2026-07-20`, so refreshing or sharing a link restores the same filters. The week selector offers complete weeks through the demo reference date; unsupported weeks are reported from the API.
+
+For development outside Compose, run the API on `http://localhost:8080` and start Vite:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+The Vite dev server proxies `/api` requests to `http://localhost:8080`. The frontend production build/type check is:
+
+```sh
+cd frontend
+npm run build
+```
+
+The frontend scaffold does not currently include a test runner or component-testing dependencies, so focused automated UI tests are not available without adding a test stack. Verify the frontend with the build above and the dashboard smoke path: open the default Summit Auto Group report, confirm total `53` and baseline totals `50, 43, 62, 39`, change account/week, refresh to confirm URL restoration, and inspect empty account and API error states. Backend endpoint checks remain described in the Verify section above.
+
 ## Milestone scope
 
-This milestone provides PostgreSQL persistence, local initialization, account retrieval, and weekly account/location activity aggregation. The account ID is demo context only, not an authorization boundary. A frontend dashboard, authentication/authorization, forecasting, anomaly detection, and production deployment are outside this milestone.
+This milestone provides PostgreSQL persistence, local initialization, account retrieval, weekly account/location activity aggregation, and the responsive frontend dashboard. The account ID is demo context only, not an authorization boundary. Authentication/authorization, forecasting, anomaly detection, and production deployment are outside this milestone.

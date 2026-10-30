@@ -15,7 +15,10 @@
 | 03 | Agent Configuration | Completed | [Agent Configuration](ai-log/03-agent-configuration.md) |
 | 04 | Project Scaffolding | Completed | [Project Scaffolding](ai-log/04-project-scaffolding.md) |
 | 05 | Database Persistence | Completed | [Database Persistence](ai-log/05-database-persistence.md) |
-| 05 | Weekly Aggregation | Completed | [Weekly Aggregation](ai-log/06-weekly-aggregation.md) |
+| 06 | Weekly Aggregation | Completed | [Weekly Aggregation](ai-log/06-weekly-aggregation.md) |
+| 07 | React Activity Dashboard | Completed | [React Activity Dashboard](ai-log/07-react-dashboard.md) |
+| 08 | Focused Frontend Testing| Completed | [Focused Frontend Testing](ai-log/08-frontend-testing.md) |
+
 
 
 ## Key Engineering Decisions
